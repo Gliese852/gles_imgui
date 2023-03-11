@@ -44,6 +44,8 @@
 #endif
 #include <EGL/egl.h>
 
+#include "imgui/imgui.h"
+#include "imgui/imgui_impl_opengl3.h"
 
 #define FLOAT_TO_FIXED(X)   ((X) * 65535.0)
 
@@ -105,6 +107,34 @@ mul_matrix(GLfloat *prod, const GLfloat *a, const GLfloat *b)
 #undef PROD
 }
 
+static void
+imgui_init()
+{
+   ImGui::CreateContext();
+   ImGui_ImplOpenGL3_Init();
+}
+
+static void
+imgui_prepare_data()
+{
+   ImGui_ImplOpenGL3_NewFrame();
+   ImGui::NewFrame();
+   static bool show_demo_window = true;
+   ImGui::ShowDemoWindow(&show_demo_window);
+   ImGui::Render();
+}
+
+static void
+imgui_render_data()
+{
+   ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
+
+static void
+imgui_destroy()
+{
+   ImGui::DestroyContext();
+}
 
 static void
 draw(void)
@@ -136,9 +166,11 @@ draw(void)
       glEnableVertexAttribArray(attr_color);
 
       glDrawArrays(GL_TRIANGLES, 0, 3);
+      imgui_render_data();
 
       glDisableVertexAttribArray(attr_pos);
       glDisableVertexAttribArray(attr_color);
+
    }
 }
 
@@ -148,6 +180,7 @@ static void
 reshape(int width, int height)
 {
    glViewport(0, 0, (GLint) width, (GLint) height);
+   ImGui::GetIO().DisplaySize = ImVec2((float)width, (float)height);
 }
 
 
@@ -239,6 +272,7 @@ init(void)
    glClearColor(0.4, 0.4, 0.4, 0.0);
 
    create_shaders();
+
 }
 
 
@@ -428,6 +462,8 @@ event_loop(Display *dpy, Window win,
       }
 
       if (redraw) {
+
+         imgui_prepare_data();
          draw();
          eglSwapBuffers(egl_dpy, egl_surf);
       }
@@ -520,6 +556,7 @@ main(int argc, char *argv[])
       printf("GL_EXTENSIONS = %s\n", (char *) glGetString(GL_EXTENSIONS));
    }
 
+   imgui_init();
    init();
 
    /* Set initial projection/viewing transformation.
@@ -534,9 +571,10 @@ main(int argc, char *argv[])
    eglDestroySurface(egl_dpy, egl_surf);
    eglTerminate(egl_dpy);
 
-
+   imgui_destroy();
    XDestroyWindow(x_dpy, win);
    XCloseDisplay(x_dpy);
 
    return 0;
 }
+// vim:et:sw=3:ts=3
