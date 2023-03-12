@@ -27,8 +27,6 @@
 
 #define USE_FULL_GL 0
 
-
-
 #include <assert.h>
 #include <math.h>
 #include <stdlib.h>
@@ -47,10 +45,21 @@
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_opengl3.h"
 
-#define FLOAT_TO_FIXED(X)   ((X) * 65535.0)
+#include "Quaternion.h"
+#include "matrix3x3.h"
+#include "matrix4x4.h"
+#include "vector2.h"
+#include "vector3.h"
+
+inline constexpr double DEG2RAD(double x) { return x * (M_PI / 180.); }
+inline constexpr float DEG2RAD(float x) { return x * (float(M_PI) / 180.f); }
+inline constexpr double RAD2DEG(double x) { return x * (180. / M_PI); }
+inline constexpr float RAD2DEG(float x) { return x * (180.f / float(M_PI)); }
 
 struct GlobalData {
-   GLfloat view_rotz = 0.0, view_roty = 0.0;
+   GLfloat view_rotx = 0.0;
+   GLfloat view_roty = 0.0;
+   GLfloat view_rotz = 0.0;
    GLfloat scalex = 0.5;
    GLfloat scaley = 0.5;
    GLfloat scalez = 0.5;
@@ -63,55 +72,6 @@ struct GlobalData {
 
 static GlobalData g;
 
-static void
-make_z_rot_matrix(GLfloat angle, GLfloat *m)
-{
-   float c = cos(angle * M_PI / 180.0);
-   float s = sin(angle * M_PI / 180.0);
-   int i;
-   for (i = 0; i < 16; i++)
-      m[i] = 0.0;
-   m[0] = m[5] = m[10] = m[15] = 1.0;
-
-   m[0] = c;
-   m[1] = s;
-   m[4] = -s;
-   m[5] = c;
-}
-
-static void
-make_scale_matrix(GLfloat xs, GLfloat ys, GLfloat zs, GLfloat *m)
-{
-   int i;
-   for (i = 0; i < 16; i++)
-      m[i] = 0.0;
-   m[0] = xs;
-   m[5] = ys;
-   m[10] = zs;
-   m[15] = 1.0;
-}
-
-
-static void
-mul_matrix(GLfloat *prod, const GLfloat *a, const GLfloat *b)
-{
-#define A(row,col)  a[(col<<2)+row]
-#define B(row,col)  b[(col<<2)+row]
-#define P(row,col)  p[(col<<2)+row]
-   GLfloat p[16];
-   GLint i;
-   for (i = 0; i < 4; i++) {
-      const GLfloat ai0=A(i,0),  ai1=A(i,1),  ai2=A(i,2),  ai3=A(i,3);
-      P(i,0) = ai0 * B(0,0) + ai1 * B(1,0) + ai2 * B(2,0) + ai3 * B(3,0);
-      P(i,1) = ai0 * B(0,1) + ai1 * B(1,1) + ai2 * B(2,1) + ai3 * B(3,1);
-      P(i,2) = ai0 * B(0,2) + ai1 * B(1,2) + ai2 * B(2,2) + ai3 * B(3,2);
-      P(i,3) = ai0 * B(0,3) + ai1 * B(1,3) + ai2 * B(2,3) + ai3 * B(3,3);
-   }
-   memcpy(prod, p, sizeof(p));
-#undef A
-#undef B
-#undef PROD
-}
 
 static void
 show_triangle_window(GlobalData &g)
@@ -139,6 +99,16 @@ show_triangle_window(GlobalData &g)
 
       ImGui::TableNextRow();
 
+      ImGui::TableSetColumnIndex(0); ImGui::Text("rotx");
+      ImGui::TableSetColumnIndex(1); ImGui::DragFloat("##rotx", &g.view_rotx, 1.0f);
+
+      ImGui::TableNextRow();
+
+      ImGui::TableSetColumnIndex(0); ImGui::Text("roty");
+      ImGui::TableSetColumnIndex(1); ImGui::DragFloat("##roty", &g.view_roty, 1.0f);
+
+      ImGui::TableNextRow();
+
       ImGui::TableSetColumnIndex(0); ImGui::Text("rotz");
       ImGui::TableSetColumnIndex(1); ImGui::DragFloat("##rotz", &g.view_rotz, 1.0f);
 
@@ -149,12 +119,14 @@ show_triangle_window(GlobalData &g)
    ImGui::End();
 }
 
+
 static void
 imgui_init()
 {
    ImGui::CreateContext();
    ImGui_ImplOpenGL3_Init();
 }
+
 
 static void
 imgui_prepare_data(GlobalData &g)
@@ -166,6 +138,7 @@ imgui_prepare_data(GlobalData &g)
    show_triangle_window(g);
    ImGui::Render();
 }
+
 
 static bool
 imgui_process_event(XEvent &event, Time current_time)
@@ -212,17 +185,20 @@ imgui_process_event(XEvent &event, Time current_time)
    return false;
 }
 
+
 static void
 imgui_render_data()
 {
    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
+
 static void
 imgui_destroy()
 {
    ImGui::DestroyContext();
 }
+
 
 static void
 draw(void)
@@ -237,25 +213,24 @@ draw(void)
       { 0, 1, 0 },
       { 0, 0, 1 }
    };
-   GLfloat mat[16], rot[16], scale[16], view_scale[16];
-
 
    /* Set modelview/projection matrix */
-   make_z_rot_matrix(g.view_rotz, rot);
+
+   auto rot = matrix4x4f::RotateZMatrix(DEG2RAD(g.view_rotz));
+   rot.RotateY(DEG2RAD(g.view_roty));
+   rot.RotateX(DEG2RAD(g.view_rotx));
 
    GLint vp[4];
    glGetIntegerv(GL_VIEWPORT, vp);
    GLint width = vp[2];
    GLint height = vp[3];
    float aspect = (float)width / (float)height;
-   make_scale_matrix(g.scalex, g.scaley, g.scalez, scale);
-   make_scale_matrix(1.0, aspect, 1.0, view_scale);
 
-   mul_matrix(mat, rot, scale);
-   mul_matrix(mat, view_scale, mat);
+   auto scale = matrix4x4f::ScaleMatrix(g.scalex, g.scaley, g.scalez);
+   auto view_scale = matrix4x4f::ScaleMatrix(1.0, aspect, 1.0);
+   auto mat = view_scale * rot * scale;
 
-
-   glUniformMatrix4fv(g.u_matrix, 1, GL_FALSE, mat);
+   glUniformMatrix4fv(g.u_matrix, 1, GL_FALSE, mat.Data());
 
    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
