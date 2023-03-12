@@ -124,6 +124,51 @@ imgui_prepare_data()
    ImGui::Render();
 }
 
+static bool
+imgui_process_event(XEvent &event, Time current_time)
+{
+   switch (event.type) {
+   case MotionNotify:
+   {
+      long delta = current_time - event.xmotion.time;
+      if (delta > 20) return false;
+      ImVec2 mouse_pos((float)event.xmotion.x, (float)event.xmotion.y);
+      ImGui::GetIO().AddMousePosEvent(mouse_pos.x, mouse_pos.y);
+      return true;
+   }
+   case ButtonPress:
+   case ButtonRelease:
+      int mouse_button = -1;
+      switch (event.xbutton.button) {
+         case 1: mouse_button = 0; break;
+         case 2: mouse_button = 1; break;
+         case 3: mouse_button = 2; break;
+
+         // wheel up, down, left, right
+         case 4: mouse_button = 4; break;
+         case 5: mouse_button = 5; break;
+         case 6: mouse_button = 6; break;
+         case 7: mouse_button = 7; break;
+      }
+      if (mouse_button == -1)
+         break;
+
+      if (mouse_button < 4) {
+         ImGui::GetIO().AddMouseButtonEvent(mouse_button, event.type == ButtonPress);
+      // wheel
+      } else if (event.type == ButtonPress) {
+         const float speed = 0.3f;
+         float wheel_y = mouse_button == 4 ? speed : mouse_button == 5 ? -speed : 0.f;
+         float wheel_x = mouse_button == 6 ? speed : mouse_button == 7 ? -speed : 0.f;
+         ImGui::GetIO().AddMouseWheelEvent(wheel_x, wheel_y);
+         long delta = current_time - event.xmotion.time;
+         if (delta > 50) return false;
+      }
+      return true;
+   }
+   return false;
+}
+
 static void
 imgui_render_data()
 {
@@ -347,7 +392,9 @@ make_x_window(Display *x_dpy, EGLDisplay egl_dpy,
    attr.background_pixel = 0;
    attr.border_pixel = 0;
    attr.colormap = XCreateColormap( x_dpy, root, visInfo->visual, AllocNone);
-   attr.event_mask = StructureNotifyMask | ExposureMask | KeyPressMask;
+   attr.event_mask =
+      StructureNotifyMask | ExposureMask | KeyPressMask |
+      ButtonPressMask | ButtonReleaseMask | PointerMotionMask | PropertyChangeMask;
    mask = CWBackPixel | CWBorderPixel | CWColormap | CWEventMask;
 
    win = XCreateWindow( x_dpy, root, 0, 0, width, height,
@@ -411,13 +458,41 @@ make_x_window(Display *x_dpy, EGLDisplay egl_dpy,
    *ctxRet = ctx;
 }
 
+static Bool
+timestamp_predicate(Display *display, XEvent  *xevent, XPointer arg)
+{
+   Window win = (Window)arg;
+   if (xevent->type == PropertyNotify &&
+         xevent->xproperty.window == win &&
+         xevent->xproperty.atom == XInternAtom (display, "MY_TIMESTAMP_PROP", False)) {
+      return True;
+   }
+
+   return False;
+}
+
+static Time
+get_server_time (Display *dpy, Window win)
+{
+  const unsigned char c = 'a';
+  XEvent xevent;
+
+  Atom timestamp_prop_atom = XInternAtom(dpy, "MY_TIMESTAMP_PROP", False);
+
+  XChangeProperty(dpy, win, timestamp_prop_atom,
+        timestamp_prop_atom,
+        8, PropModeReplace, &c, 1);
+
+  XIfEvent(dpy, &xevent, timestamp_predicate, (XPointer)win);
+
+  return xevent.xproperty.time;
+}
 
 static void
-event_loop(Display *dpy, Window win,
-           EGLDisplay egl_dpy, EGLSurface egl_surf)
+event_loop(Display *dpy, Window win, EGLDisplay egl_dpy, EGLSurface egl_surf)
 {
+   int redraw = 1;
    while (1) {
-      int redraw = 0;
       XEvent event;
 
       XNextEvent(dpy, &event);
@@ -457,15 +532,21 @@ event_loop(Display *dpy, Window win,
          }
          redraw = 1;
          break;
+      case DestroyNotify:
+         return;
+      case UnmapNotify:
+         break;
       default:
-         ; /*no-op*/
+         if (imgui_process_event(event, get_server_time(dpy, win))) {
+            redraw = 1;
+         }
       }
 
       if (redraw) {
-
          imgui_prepare_data();
          draw();
          eglSwapBuffers(egl_dpy, egl_surf);
+         redraw = 0;
       }
    }
 }
@@ -483,7 +564,7 @@ usage(void)
 int
 main(int argc, char *argv[])
 {
-   const int winWidth = 300, winHeight = 300;
+   const int winWidth = 1024, winHeight = 768;
    Display *x_dpy;
    Window win;
    EGLSurface egl_surf;
