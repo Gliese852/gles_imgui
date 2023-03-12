@@ -49,13 +49,19 @@
 
 #define FLOAT_TO_FIXED(X)   ((X) * 65535.0)
 
+struct GlobalData {
+   GLfloat view_rotz = 0.0, view_roty = 0.0;
+   GLfloat scalex = 0.5;
+   GLfloat scaley = 0.5;
+   GLfloat scalez = 0.5;
+   GLint u_matrix = -1;
+   GLint attr_pos = 0, attr_color = 1;
 
+   bool show_triangle_window = true;
+   bool show_demo_window = false;
+};
 
-static GLfloat view_rotx = 0.0, view_roty = 0.0;
-
-static GLint u_matrix = -1;
-static GLint attr_pos = 0, attr_color = 1;
-
+static GlobalData g;
 
 static void
 make_z_rot_matrix(GLfloat angle, GLfloat *m)
@@ -108,6 +114,42 @@ mul_matrix(GLfloat *prod, const GLfloat *a, const GLfloat *b)
 }
 
 static void
+show_triangle_window(GlobalData &g)
+{
+   ImGui::Begin("Triangle control", &g.show_triangle_window);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
+   ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
+   if (ImGui::BeginTable("split", 2, ImGuiTableFlags_BordersOuter | ImGuiTableFlags_Resizable))
+   {
+      ImGui::AlignTextToFramePadding();
+
+      ImGui::TableNextRow();
+
+      ImGui::TableSetColumnIndex(0); ImGui::Text("scalex");
+      ImGui::TableSetColumnIndex(1); ImGui::DragFloat("##scalex", &g.scalex, 0.01f);
+
+      ImGui::TableNextRow();
+
+      ImGui::TableSetColumnIndex(0); ImGui::Text("scaley");
+      ImGui::TableSetColumnIndex(1); ImGui::DragFloat("##scaley", &g.scaley, 0.01f);
+
+      ImGui::TableNextRow();
+
+      ImGui::TableSetColumnIndex(0); ImGui::Text("scalez");
+      ImGui::TableSetColumnIndex(1); ImGui::DragFloat("##scalez", &g.scalez, 0.01f);
+
+      ImGui::TableNextRow();
+
+      ImGui::TableSetColumnIndex(0); ImGui::Text("rotz");
+      ImGui::TableSetColumnIndex(1); ImGui::DragFloat("##rotz", &g.view_rotz, 1.0f);
+
+      ImGui::EndTable();
+   }
+
+   ImGui::PopStyleVar();
+   ImGui::End();
+}
+
+static void
 imgui_init()
 {
    ImGui::CreateContext();
@@ -115,12 +157,13 @@ imgui_init()
 }
 
 static void
-imgui_prepare_data()
+imgui_prepare_data(GlobalData &g)
 {
    ImGui_ImplOpenGL3_NewFrame();
    ImGui::NewFrame();
-   static bool show_demo_window = true;
-   ImGui::ShowDemoWindow(&show_demo_window);
+   if (g.show_demo_window) ImGui::ShowDemoWindow(&g.show_demo_window);
+
+   show_triangle_window(g);
    ImGui::Render();
 }
 
@@ -194,27 +237,39 @@ draw(void)
       { 0, 1, 0 },
       { 0, 0, 1 }
    };
-   GLfloat mat[16], rot[16], scale[16];
+   GLfloat mat[16], rot[16], scale[16], view_scale[16];
+
 
    /* Set modelview/projection matrix */
-   make_z_rot_matrix(view_rotx, rot);
-   make_scale_matrix(0.5, 0.5, 0.5, scale);
+   make_z_rot_matrix(g.view_rotz, rot);
+
+   GLint vp[4];
+   glGetIntegerv(GL_VIEWPORT, vp);
+   GLint width = vp[2];
+   GLint height = vp[3];
+   float aspect = (float)width / (float)height;
+   make_scale_matrix(g.scalex, g.scaley, g.scalez, scale);
+   make_scale_matrix(1.0, aspect, 1.0, view_scale);
+
    mul_matrix(mat, rot, scale);
-   glUniformMatrix4fv(u_matrix, 1, GL_FALSE, mat);
+   mul_matrix(mat, view_scale, mat);
+
+
+   glUniformMatrix4fv(g.u_matrix, 1, GL_FALSE, mat);
 
    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
    {
-      glVertexAttribPointer(attr_pos, 2, GL_FLOAT, GL_FALSE, 0, verts);
-      glVertexAttribPointer(attr_color, 3, GL_FLOAT, GL_FALSE, 0, colors);
-      glEnableVertexAttribArray(attr_pos);
-      glEnableVertexAttribArray(attr_color);
+      glVertexAttribPointer(g.attr_pos, 2, GL_FLOAT, GL_FALSE, 0, verts);
+      glVertexAttribPointer(g.attr_color, 3, GL_FLOAT, GL_FALSE, 0, colors);
+      glEnableVertexAttribArray(g.attr_pos);
+      glEnableVertexAttribArray(g.attr_color);
 
       glDrawArrays(GL_TRIANGLES, 0, 3);
       imgui_render_data();
 
-      glDisableVertexAttribArray(attr_pos);
-      glDisableVertexAttribArray(attr_color);
+      glDisableVertexAttribArray(g.attr_pos);
+      glDisableVertexAttribArray(g.attr_color);
 
    }
 }
@@ -287,20 +342,20 @@ create_shaders(void)
 
    if (0) {
       /* test setting attrib locations */
-      glBindAttribLocation(program, attr_pos, "pos");
-      glBindAttribLocation(program, attr_color, "color");
+      glBindAttribLocation(program, g.attr_pos, "pos");
+      glBindAttribLocation(program, g.attr_color, "color");
       glLinkProgram(program);  /* needed to put attribs into effect */
    }
    else {
       /* test automatic attrib locations */
-      attr_pos = glGetAttribLocation(program, "pos");
-      attr_color = glGetAttribLocation(program, "color");
+      g.attr_pos = glGetAttribLocation(program, "pos");
+      g.attr_color = glGetAttribLocation(program, "color");
    }
 
-   u_matrix = glGetUniformLocation(program, "modelviewProjection");
-   printf("Uniform modelviewProjection at %d\n", u_matrix);
-   printf("Attrib pos at %d\n", attr_pos);
-   printf("Attrib color at %d\n", attr_color);
+   g.u_matrix = glGetUniformLocation(program, "modelviewProjection");
+   printf("Uniform modelviewProjection at %d\n", g.u_matrix);
+   printf("Attrib pos at %d\n", g.attr_pos);
+   printf("Attrib color at %d\n", g.attr_color);
 }
 
 
@@ -510,16 +565,16 @@ event_loop(Display *dpy, Window win, EGLDisplay egl_dpy, EGLSurface egl_surf)
             int r, code;
             code = XLookupKeysym(&event.xkey, 0);
             if (code == XK_Left) {
-               view_roty += 5.0;
+               g.view_roty += 5.0;
             }
             else if (code == XK_Right) {
-               view_roty -= 5.0;
+               g.view_roty -= 5.0;
             }
             else if (code == XK_Up) {
-               view_rotx += 5.0;
+               g.view_rotz += 5.0;
             }
             else if (code == XK_Down) {
-               view_rotx -= 5.0;
+               g.view_rotz -= 5.0;
             }
             else {
                r = XLookupString(&event.xkey, buffer, sizeof(buffer),
@@ -543,7 +598,7 @@ event_loop(Display *dpy, Window win, EGLDisplay egl_dpy, EGLSurface egl_surf)
       }
 
       if (redraw) {
-         imgui_prepare_data();
+         imgui_prepare_data(g);
          draw();
          eglSwapBuffers(egl_dpy, egl_surf);
          redraw = 0;
