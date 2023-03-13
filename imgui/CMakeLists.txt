@@ -1,6 +1,6 @@
 project(imgui LANGUAGES CXX)
 set(BUILD_SHARED_LIBS OFF)
-add_definitions(-DIMGUI_IMPL_OPENGL_ES2)
+add_definitions(-DIMGUI_IMPL_OPENGL_ES3)
 add_library(${PROJECT_NAME}
 	imgui.cpp
 	imgui_draw.cpp
@@ -8,9 +8,4 @@ add_library(${PROJECT_NAME}
 	imgui_tables.cpp
 	imgui_widgets.cpp
 	imgui_impl_opengl3.cpp
-)
-target_link_libraries(${PROJECT_NAME} LINK_PRIVATE
-	${OPENGL_LIBRARIES}
-	${GLEW_LIBRARIES}
-	${SDL2_LIBRARIES}
 )

@@ -38,7 +38,7 @@
 #if USE_FULL_GL
 #include "gl_wrap.h"  /* use full OpenGL */
 #else
-#include <GLES2/gl2.h>  /* use OpenGL ES 2.x */
+#include <GLES3/gl3.h>  /* use OpenGL ES 3.x */
 #endif
 #include <EGL/egl.h>
 
