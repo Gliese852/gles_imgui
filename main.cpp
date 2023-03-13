@@ -68,6 +68,8 @@ struct GlobalData {
 
    bool show_triangle_window = true;
    bool show_demo_window = false;
+
+   GLuint vbo, cbo, ibo;
 };
 
 static GlobalData g;
@@ -199,21 +201,9 @@ imgui_destroy()
    ImGui::DestroyContext();
 }
 
-
 static void
 draw(void)
 {
-   static const GLfloat verts[3][2] = {
-      { -1, -1 },
-      {  1, -1 },
-      {  0,  1 }
-   };
-   static const GLfloat colors[3][3] = {
-      { 1, 0, 0 },
-      { 0, 1, 0 },
-      { 0, 0, 1 }
-   };
-
    /* Set modelview/projection matrix */
 
    auto rot = matrix4x4f::RotateZMatrix(DEG2RAD(g.view_rotz));
@@ -235,16 +225,12 @@ draw(void)
    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
    {
-      glVertexAttribPointer(g.attr_pos, 2, GL_FLOAT, GL_FALSE, 0, verts);
-      glVertexAttribPointer(g.attr_color, 3, GL_FLOAT, GL_FALSE, 0, colors);
-      glEnableVertexAttribArray(g.attr_pos);
-      glEnableVertexAttribArray(g.attr_color);
 
-      glDrawArrays(GL_TRIANGLES, 0, 3);
+      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g.ibo);
+      glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
       imgui_render_data();
-
-      glDisableVertexAttribArray(g.attr_pos);
-      glDisableVertexAttribArray(g.attr_color);
 
    }
 }
@@ -258,6 +244,44 @@ reshape(int width, int height)
    ImGui::GetIO().DisplaySize = ImVec2((float)width, (float)height);
 }
 
+
+static void
+make_buffers()
+{
+   GLfloat verts[4][2] = {
+      { -1, -1 },
+      {  1, -1 },
+      {  1,  1 },
+      { -1,  1 }
+   };
+   glGenBuffers(1, &g.vbo);
+   glBindBuffer(GL_ARRAY_BUFFER, g.vbo);
+   glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+   glEnableVertexAttribArray(g.attr_pos);
+   glVertexAttribPointer(g.attr_pos, 2, GL_FLOAT, GL_FALSE, 0, 0);
+
+   GLfloat colors[4][3] = {
+      { 1, 0, 0 },
+      { 0, 1, 0 },
+      { 0, 0, 1 },
+      { 0, 1, 1 }
+   };
+   glGenBuffers(1, &g.cbo);
+   glBindBuffer(GL_ARRAY_BUFFER, g.cbo);
+   glBufferData(GL_ARRAY_BUFFER, sizeof(colors), colors, GL_STATIC_DRAW);
+   glEnableVertexAttribArray(g.attr_color);
+   glVertexAttribPointer(g.attr_color, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+   GLuint elements[6] = {
+      0, 1, 2, 2, 3, 0
+   };
+   glGenBuffers(1, &g.ibo);
+   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g.ibo);
+   glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(elements), elements, GL_STATIC_DRAW);
+
+   glBindBuffer(GL_ARRAY_BUFFER, 0);
+   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+}
 
 static void
 create_shaders(void)
@@ -347,6 +371,7 @@ init(void)
    glClearColor(0.4, 0.4, 0.4, 0.0);
 
    create_shaders();
+   make_buffers();
 
 }
 
