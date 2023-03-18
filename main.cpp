@@ -32,6 +32,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <cstring>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
@@ -51,10 +52,28 @@
 #include "vector2.h"
 #include "vector3.h"
 
+#include "CitySpotGenerator.h"
+
 inline constexpr double DEG2RAD(double x) { return x * (M_PI / 180.); }
 inline constexpr float DEG2RAD(float x) { return x * (float(M_PI) / 180.f); }
 inline constexpr double RAD2DEG(double x) { return x * (180. / M_PI); }
 inline constexpr float RAD2DEG(float x) { return x * (180.f / float(M_PI)); }
+
+struct TextureWindowData {
+   uint32_t seed = 0;
+   int points = 13;
+   int parts = 5;
+   float mindist = 3.0;
+   float scale = 2.f;
+   uint32_t citySize = 384;
+   uint32_t pitch = 48;
+   uint32_t bsLength = citySize * pitch;
+
+   uint8_t *bitset;
+   uint32_t *texture;
+   GLuint bitsetID;
+
+};
 
 struct GlobalData {
    GLfloat view_rotx = 0.0;
@@ -67,12 +86,96 @@ struct GlobalData {
    GLint attr_pos = 0, attr_color = 1;
 
    bool show_triangle_window = true;
+   bool show_texture_window = true;
    bool show_demo_window = false;
 
    GLuint vbo, cbo, ibo;
+
+   TextureWindowData texture_window_data;
 };
 
 static GlobalData g;
+
+void bitset_to_texture(uint8_t *bitset, uint32_t *texture, uint32_t citySize)
+{
+	std::memset(texture, 0, citySize * citySize * 4);
+	for (uint32_t i = 0; i < citySize * citySize; ++i) {
+		uint32_t bitset_idx = i >> 3;
+		uint8_t bitmask = 1 << (i & 7);
+		if (0 != (bitmask & *(bitset + bitset_idx)))
+			texture[i] = 0xFFFFFFFF;
+	}
+}
+
+GLuint push_texture(uint8_t *bitset, uint32_t *texture, uint32_t citySize)
+{
+
+	bitset_to_texture(bitset, texture, citySize);
+
+	GLuint bitsetID = 0;
+
+	GLint last_texture;
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &last_texture);
+	glGenTextures(1, &bitsetID);
+	glBindTexture(GL_TEXTURE_2D, bitsetID);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, citySize, citySize, 0, GL_RGBA, GL_UNSIGNED_BYTE, texture);
+	glBindTexture(GL_TEXTURE_2D, last_texture);
+	return bitsetID;
+}
+
+static void
+init_texture_window(TextureWindowData &d)
+{
+   printf("INIT TEXTURE WINDOW\n");
+   d.bitset = new uint8_t[d.bsLength];
+   d.texture = new uint32_t[d.citySize * d.citySize];
+}
+
+static void
+show_texture_window(TextureWindowData &d)
+{
+   ImGui::Begin("Texture window");                          // Create a window called "Hello, world!" and append into it.
+   bool update = false;
+   if (ImGui::Button("seed -")) {
+      d.seed--;
+      update = true;
+   }
+   ImGui::SameLine();
+   if (ImGui::Button("update")) {
+      update = true;
+   }
+   ImGui::SameLine();
+   if (ImGui::Button("seed +")) {
+      d.seed++;
+      update = true;
+   }
+   ImGui::SameLine();
+   ImGui::SetNextItemWidth(120);
+   update = ImGui::DragInt("##points", &d.points, 1, 1, 100, "points: %d") || update;
+   ImGui::SameLine();
+   ImGui::SetNextItemWidth(120);
+   update = ImGui::DragInt("##parts", &d.parts, 1, 1, 10, "parts: %d") || update;
+   ImGui::SameLine();
+   ImGui::SetNextItemWidth(120);
+   update = ImGui::DragFloat("##mindist", &d.mindist, 0.1, 1.0, 20.0, "mindist: %.2f") || update;
+   if (update) {
+      generate_blob(d.bitset, d.seed, d.citySize, d.pitch, d.points, d.parts, d.mindist);
+      d.bitsetID = push_texture(d.bitset, d.texture, d.citySize);
+   }
+   ImGui::SameLine();
+   ImGui::Text("current seed: %d", d.seed);
+   ImTextureID my_tex_id = (ImTextureID)(intptr_t)d.bitsetID;
+   //ImTextureID my_tex_id = io.Fonts->TexID;
+   ImVec2 uv_min = ImVec2(0.0f, 0.0f);                 // Top-left
+   ImVec2 uv_max = ImVec2(1.0f, 1.0f);                 // Lower-right
+   ImVec4 tint_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);   // No tint
+   ImVec4 border_col = ImVec4(1.0f, 1.0f, 1.0f, 0.5f); // 50% opaque white
+   ImGui::Image(my_tex_id, ImVec2(d.citySize * d.scale, d.citySize * d.scale), uv_min, uv_max, tint_col, border_col);
+   ImGui::End();
+}
 
 
 static void
@@ -138,6 +241,7 @@ imgui_prepare_data(GlobalData &g)
    if (g.show_demo_window) ImGui::ShowDemoWindow(&g.show_demo_window);
 
    show_triangle_window(g);
+   show_texture_window(g.texture_window_data);
    ImGui::Render();
 }
 
@@ -694,6 +798,7 @@ main(int argc, char *argv[])
 
    imgui_init();
    init();
+   init_texture_window(g.texture_window_data);
 
    /* Set initial projection/viewing transformation.
     * We can't be sure we'll get a ConfigureNotify event when the window

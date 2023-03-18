@@ -1,11 +1,11 @@
-// Copyright © 2008-2023 Pioneer Developers. See AUTHORS.txt for details
+// Copyright © 2008-2022 Pioneer Developers. See AUTHORS.txt for details
 // Licensed under the terms of the GPL v3. See licenses/GPL-3.txt
 
 #ifndef _FLOATCOMPARISON_H
 #define _FLOATCOMPARISON_H
 
+#include <SDL_stdinc.h>
 #include <limits>
-#include <cstdint>
 #ifdef _MSC_VER
 #include <float.h> // for _finite
 #else
