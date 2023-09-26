@@ -27,6 +27,8 @@
 
 #define USE_FULL_GL 0
 
+#include <iostream>
+#include <algorithm>
 #include <assert.h>
 #include <math.h>
 #include <stdlib.h>
@@ -51,8 +53,7 @@
 #include "matrix4x4.h"
 #include "vector2.h"
 #include "vector3.h"
-
-#include "CitySpotGenerator.h"
+#include "Random.h"
 
 inline constexpr double DEG2RAD(double x) { return x * (M_PI / 180.); }
 inline constexpr float DEG2RAD(float x) { return x * (float(M_PI) / 180.f); }
@@ -65,13 +66,25 @@ struct TextureWindowData {
    int parts = 5;
    float mindist = 3.0;
    float scale = 2.f;
-   uint32_t citySize = 384;
+   static constexpr uint32_t citySize = 384;
    uint32_t pitch = 48;
    uint32_t bsLength = citySize * pitch;
 
-   uint8_t *bitset;
+   uint8_t *bitset = nullptr;
    uint32_t *texture;
    GLuint bitsetID;
+
+   float bars[citySize]{};
+   float normalBars[citySize]{};
+   float add = 0.0001f;
+   int step = 10000;
+   Random rand;
+
+   uint32_t normColor = 0xFF0000FF;
+   uint32_t testColor = 0xFFFF0000;
+   uint32_t test1Color = 0xFF00FF00;
+
+   float area = 0.f;
 
 };
 
@@ -110,7 +123,7 @@ void bitset_to_texture(uint8_t *bitset, uint32_t *texture, uint32_t citySize)
 GLuint push_texture(uint8_t *bitset, uint32_t *texture, uint32_t citySize)
 {
 
-	bitset_to_texture(bitset, texture, citySize);
+	// bitset_to_texture(bitset, texture, citySize);
 
 	GLuint bitsetID = 0;
 
@@ -131,52 +144,86 @@ init_texture_window(TextureWindowData &d)
 {
    printf("INIT TEXTURE WINDOW\n");
    d.bitset = new uint8_t[d.bsLength];
+	std::memset(d.bitset, 0, d.bsLength);
    d.texture = new uint32_t[d.citySize * d.citySize];
+	std::memset(d.texture, 0, d.citySize * d.citySize * 4);
+}
+
+static void put_point(TextureWindowData &d, uint32_t x, uint32_t y, uint32_t color)
+{
+   uint32_t index = y * d.citySize + x;
+   uint32_t &val = d.texture[index];
+   val |= color;
+}
+
+static void
+draw_box(TextureWindowData &d, int x0, int y0, int x1, int y1, uint32_t color)
+{
+   for (int x = x0; x <= x1; ++x)
+      for (int y = y0; y <= y1; ++y)
+         put_point(d, x, y, color);
+}
+
+// x 0..1, y 0..1
+static void
+draw_bar(TextureWindowData &d, int x, float y, uint32_t color)
+{
+   int h = y * d.citySize;
+   // we will add a very rare event y = 1.0 to the last interval
+   h = std::min(h, int(d.citySize - 1));
+   draw_box(d, x, d.citySize - h - 1, x, d.citySize, color);
+}
+
+static void
+new_value(TextureWindowData &d, float value, float array[],  uint32_t color)
+{
+   int x = (value + 1.f) / 2.f * d.citySize;
+   array[x] += d.add;
+   draw_bar(d, x, array[x], color);
+   d.area += d.add;
 }
 
 static void
 show_texture_window(TextureWindowData &d)
 {
    ImGui::Begin("Texture window");                          // Create a window called "Hello, world!" and append into it.
-   bool update = false;
-   if (ImGui::Button("seed -")) {
-      d.seed--;
-      update = true;
+   bool update = true;
+   for (int i = 0; i < d.step; ++i) {
+      //fixed val = d.rand.NormFixed(0, fixed(1, 1));
+      fixed mean(0, 1);
+      fixed maxdev(1, 1);
+      fixed val = mean + maxdev * ((d.rand.Fixed() + d.rand.Fixed() + d.rand.Fixed()) * fixed(10, 15) - fixed(1, 1));
+      if (val.ToFloat() > -1.f && val.ToFloat() < 1.f) new_value(d, val.ToFloat(), d.bars, d.testColor);
+
+      //fixed val1 = d.rand.SFixed(2).Abs();
+      //new_value(d, val1.ToFloat(), d.normalBars, d.test1Color);
+      //double val = d.rand.Double() + d.rand.Double() + d.rand.Double();
+      //val = (val / 3.0 - 0.5) * 1.9;
+      //double val = d.rand.Normal(0, 0.33333);
+      //if (val > -1.0 && val < 1.0) new_value(d, val, d.bars, d.testColor);
+      //fixed val = d.rand.NormFixed(fixed(0, 1), fixed(1,1));
+      double x = d.rand.Double_open();
+      double y = d.rand.Double_open();
+      double sigma = 0.33333;
+      double vald = sigma * cos(2 * M_PI * x) * sqrt(-2 * log(y));
+
+      if (vald > -1.0 && vald < 1.0) new_value(d, vald, d.normalBars, d.normColor);
+      //  (* sigma (cos (* 2 pi x)) (sqrt (* -2 (log y))))
    }
-   ImGui::SameLine();
-   if (ImGui::Button("update")) {
-      update = true;
-   }
-   ImGui::SameLine();
-   if (ImGui::Button("seed +")) {
-      d.seed++;
-      update = true;
-   }
-   ImGui::SameLine();
-   ImGui::SetNextItemWidth(120);
-   update = ImGui::DragInt("##points", &d.points, 1, 1, 100, "points: %d") || update;
-   ImGui::SameLine();
-   ImGui::SetNextItemWidth(120);
-   update = ImGui::DragInt("##parts", &d.parts, 1, 1, 10, "parts: %d") || update;
-   ImGui::SameLine();
-   ImGui::SetNextItemWidth(120);
-   update = ImGui::DragFloat("##mindist", &d.mindist, 0.1, 1.0, 20.0, "mindist: %.2f") || update;
    if (update) {
-      generate_blob(d.bitset, d.seed, d.citySize, d.pitch, d.points, d.parts, d.mindist);
       d.bitsetID = push_texture(d.bitset, d.texture, d.citySize);
    }
    ImGui::SameLine();
-   ImGui::Text("current seed: %d", d.seed);
+   ImGui::Text("area: %.3f", d.area / d.citySize);
    ImTextureID my_tex_id = (ImTextureID)(intptr_t)d.bitsetID;
    //ImTextureID my_tex_id = io.Fonts->TexID;
    ImVec2 uv_min = ImVec2(0.0f, 0.0f);                 // Top-left
    ImVec2 uv_max = ImVec2(1.0f, 1.0f);                 // Lower-right
    ImVec4 tint_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);   // No tint
    ImVec4 border_col = ImVec4(1.0f, 1.0f, 1.0f, 0.5f); // 50% opaque white
-   ImGui::Image(my_tex_id, ImVec2(d.citySize * d.scale, d.citySize * d.scale), uv_min, uv_max, tint_col, border_col);
+   ImGui::Image(my_tex_id, ImVec2(d.citySize * d.scale, d.citySize * d.scale / 2), uv_min, uv_max, tint_col, border_col);
    ImGui::End();
 }
-
 
 static void
 show_triangle_window(GlobalData &g)
@@ -330,9 +377,9 @@ draw(void)
 
    {
 
-      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g.ibo);
-      glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+   //   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g.ibo);
+   //   glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+   //   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
       imgui_render_data();
 
@@ -752,7 +799,7 @@ main(int argc, char *argv[])
    x_dpy = XOpenDisplay(dpyName);
    if (!x_dpy) {
       printf("Error: couldn't open display %s\n",
-	     dpyName ? dpyName : getenv("DISPLAY"));
+             dpyName ? dpyName : getenv("DISPLAY"));
       return -1;
    }
 
