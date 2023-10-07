@@ -74,15 +74,16 @@ struct TextureWindowData {
    uint32_t *texture;
    GLuint bitsetID;
 
-   float bars[citySize]{};
-   float normalBars[citySize]{};
+   float bars_0[citySize]{};
+   float bars_1[citySize]{};
+   float bars_2[citySize]{};
    float add = 0.0001f;
    int step = 10000;
    Random rand;
 
-   uint32_t normColor = 0xFF0000FF;
-   uint32_t testColor = 0xFFFF0000;
-   uint32_t test1Color = 0xFF00FF00;
+   uint32_t redColor = 0xFF0000FF;
+   uint32_t greenColor = 0xFF00FF00;
+   uint32_t blueColor = 0xFFFF0000;
 
    float area = 0.f;
 
@@ -168,7 +169,7 @@ draw_box(TextureWindowData &d, int x0, int y0, int x1, int y1, uint32_t color)
 static void
 draw_bar(TextureWindowData &d, int x, float y, uint32_t color)
 {
-   int h = y * d.citySize;
+   int h = y * d.citySize * 0.1;
    // we will add a very rare event y = 1.0 to the last interval
    h = std::min(h, int(d.citySize - 1));
    draw_box(d, x, d.citySize - h - 1, x, d.citySize, color);
@@ -189,26 +190,9 @@ show_texture_window(TextureWindowData &d)
    ImGui::Begin("Texture window");                          // Create a window called "Hello, world!" and append into it.
    bool update = true;
    for (int i = 0; i < d.step; ++i) {
-      //fixed val = d.rand.NormFixed(0, fixed(1, 1));
-      fixed mean(0, 1);
-      fixed maxdev(1, 1);
-      fixed val = mean + maxdev * ((d.rand.Fixed() + d.rand.Fixed() + d.rand.Fixed()) * fixed(10, 15) - fixed(1, 1));
-      if (val.ToFloat() > -1.f && val.ToFloat() < 1.f) new_value(d, val.ToFloat(), d.bars, d.testColor);
-
-      //fixed val1 = d.rand.SFixed(2).Abs();
-      //new_value(d, val1.ToFloat(), d.normalBars, d.test1Color);
-      //double val = d.rand.Double() + d.rand.Double() + d.rand.Double();
-      //val = (val / 3.0 - 0.5) * 1.9;
-      //double val = d.rand.Normal(0, 0.33333);
-      //if (val > -1.0 && val < 1.0) new_value(d, val, d.bars, d.testColor);
-      //fixed val = d.rand.NormFixed(fixed(0, 1), fixed(1,1));
-      double x = d.rand.Double_open();
-      double y = d.rand.Double_open();
-      double sigma = 0.33333;
-      double vald = sigma * cos(2 * M_PI * x) * sqrt(-2 * log(y));
-
-      if (vald > -1.0 && vald < 1.0) new_value(d, vald, d.normalBars, d.normColor);
-      //  (* sigma (cos (* 2 pi x)) (sqrt (* -2 (log y))))
+      new_value(d, (d.rand.NormFixed() * d.rand.NormFixed()).ToFloat(), d.bars_0, d.redColor);
+      new_value(d, d.rand.SFixed(5).ToFloat(), d.bars_2, d.blueColor);
+      new_value(d, d.rand.SFixed(4).ToFloat(), d.bars_1, d.greenColor);
    }
    if (update) {
       d.bitsetID = push_texture(d.bitset, d.texture, d.citySize);
@@ -221,7 +205,7 @@ show_texture_window(TextureWindowData &d)
    ImVec2 uv_max = ImVec2(1.0f, 1.0f);                 // Lower-right
    ImVec4 tint_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);   // No tint
    ImVec4 border_col = ImVec4(1.0f, 1.0f, 1.0f, 0.5f); // 50% opaque white
-   ImGui::Image(my_tex_id, ImVec2(d.citySize * d.scale, d.citySize * d.scale / 2), uv_min, uv_max, tint_col, border_col);
+   ImGui::Image(my_tex_id, ImVec2(d.citySize * d.scale, d.citySize * d.scale), uv_min, uv_max, tint_col, border_col);
    ImGui::End();
 }
 

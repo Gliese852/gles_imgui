@@ -247,10 +247,30 @@ public:
 
 	// interval (mean - stddev, mean + stddev)
 	// this is not a true gaussian distribution
-	inline fixed NormFixed(fixed mean, fixed stddev)
+	// Returns an approximation of a normal distribution in the bounded interval
+	// (-1, 1)
+	inline fixed NormFixed()
+	{
+		// Because addition is fully commutative, the compiler can order these
+		// Fixed() calls in any order it wants without changing the result
+		fixed o = Fixed() + Fixed() + Fixed();
+		return o * fixed(10, 15) - fixed(1, 1);
+	}
+
+	// interval (mean - maxdev, mean + maxdev)
+	// this is an approximation of a gaussian distribution with cross-platform determinism
+	inline fixed NormFixed(fixed mean, fixed maxdev)
+	{
+		return mean + maxdev * NormFixed();
+	}
+
+
+	inline fixed NormFixedOld(fixed mean, fixed stddev)
 	{
 		return mean + SFixed(2) * stddev;
 	}
+
+
 
 
 	const pcg32 &GetPCG() const { return mPCG; }
